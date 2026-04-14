@@ -1,0 +1,88 @@
+/*Encounter Master Table - original query made 04.28.25*/
+
+--IF OBJECT_ID('TempDB..#EncounterMaster') IS NOT NULL DROP TABLE #EncounterMaster
+
+select
+----------Encounter Information----------
+ef.EncounterKey
+,ef.EncounterEpicCsn
+,ef.Type as EncounterType --use as filter to pull out HSP ENC
+,ef.DerivedEncounterStatus
+,ef.PatientClass
+,dd.ServiceAreaEpicId
+,dd.ServiceAreaName
+,ef.DepartmentKey
+,dd.DepartmentEpicId
+,dd.DepartmentName
+,dd.DepartmentAbbreviation
+,ef.PrimaryProcedureDurableKey
+,pro.Name as PrimaryProcedureName
+,ef.PrimaryDiagnosisKey
+,diag.Name as PrimaryDiagnosisName
+--,ef.IsHospitalAdmission
+--,ef.IsHospitalOutpatientVisit
+,ef.AdmissionDateKey
+,adt.DateValue as AdmissionDateValue
+,ef.AdmissionType
+,adm.Name as AdmittingDepartment
+,(convert(int, convert(char(8), adt.DateValue, 112)) - convert(char(8), pd.BirthDate, 112)) / 10000 as AgeAtAdmission
+,haf.InpatientLengthOfStayInDays as LengthOfStay
+,ef.DischargeDateKey
+,ddt.DateValue as DischargeDateValue
+,ef.DischargeDisposition
+,zcdd.NAME as DISCHARGE_DESTINATION
+,ef.AdmittingProviderDurableKey
+,adpd.Name as AdmittingProviderName
+,adpd.Npi as AdmittingProviderNPI
+,ef.AttendingProviderDurableKey
+,apd.Name as AttendingProviderName
+,apd.Npi as AttendingProviderNPI
+,ef.ReferringProviderDurableKey
+,rpd.Name as ReferringProviderName
+,rpd.Npi as ReferringProviderNPI
+----------Visit Information----------
+,vf.VisitKey --link to VisitMaster with this
+----------Patient Information----------
+,ef.PatientDurableKey --link to PatientMaster with this
+----------Coverage Information----------
+,ef.PrimaryCoverageKey --join to CoverageDim 
+,coalesce(vf.HospitalAccountEpicId,haf.HospitalAccountEpicId) as HospitalAccountEpicID --incorrect for Hospital IP
+,cd.BenefitPlanName
+,cd.CoverageFinancialClass
+,cd.PayorName
+,cd.PayorFinancialClass
+----------Impairment Code Information----------
+,imp.HCSCInjuryDate
+,imp.HCSCInjuryDescription
+,imp.InjuryCategory
+,imp.InjuryDetails
+,imp.Program
+,imp.PrimaryImpairmentCode
+,imp.SecondaryImpairmentCode
+,imp.TertiaryImpairmentCode
+,imp.NEURO_LVL_OF_INJ as NeuroLvlOfInjury
+,imp.ASIA_IMPAIRMENT as AsiaImpairment
+--into #EncounterMaster
+from Caboodle.EncounterFact ef
+left outer join Caboodle.VisitFact vf on vf.EncounterKey = ef.EncounterKey
+left outer join bb.ImpairmentCodesByEncounter imp on imp.PAT_ENC_CSN_ID = ef.EncounterEpicCsn --view has logic to pull in old pt level and encounter level
+left outer join Caboodle.DepartmentDim dd on dd.DepartmentKey = ef.DepartmentKey
+left outer join Caboodle.CoverageDim cd on cd.CoverageKey = ef.PrimaryCoverageKey
+left outer join Caboodle.ProviderDim adpd on adpd.DurableKey = ef.AdmittingProviderDurableKey
+                and adpd.IsCurrent = '1'
+left outer join Caboodle.ProviderDim apd on apd.DurableKey = ef.AttendingProviderDurableKey
+				and apd.IsCurrent = '1'
+left outer join Caboodle.ProviderDim rpd on rpd.DurableKey = ef.ReferringProviderDurableKey
+                and rpd.IsCurrent = '1'
+left outer join Caboodle.ProcedureDim pro on pro.DurableKey = ef.PrimaryProcedureDurableKey
+				and pro.IsCurrent = '1'
+left outer join Caboodle.DiagnosisDim diag on diag.DiagnosisKey = ef.PrimaryDiagnosisKey
+left outer join Caboodle.DateDim adt on adt.DateKey = ef.AdmissionDateKey
+left outer join Caboodle.DateDim ddt on ddt.DateKey = ef.DischargeDateKey
+left outer join Caboodle.HospitalAdmissionFact haf on haf.EncounterKey = ef.EncounterKey
+left outer join Caboodle.DepartmentDim adm on adm.DepartmentKey = haf.AdmittingDepartmentKey --admitting department
+left outer join Caboodle.PatientDim pd on pd.DurableKey = ef.PatientDurableKey
+                and pd.IsCurrent = '1'
+left outer join Clarity.pat_enc_hsp hsp on hsp.PAT_ENC_CSN_ID = ef.EncounterEpicCsn
+left outer join Clarity.ZC_DISCH_DEST zcdd on zcdd.DISCH_DEST_C = hsp.DISCH_DEST_C
+--where ef.EncounterKey = '270139691'
